@@ -45,7 +45,7 @@ interface IBEP20 {
 /**
  * @dev Provides information about the current execution context, including the
  * sender of the transaction and its data. While these are generally available
- * via _msgSender() and msg.data, they should not be accessed in such a direct
+ * via msg.sender and msg.data, they should not be accessed in such a direct
  * manner, since when dealing with meta-transactions the account sending and
  * paying for execution may not be the actual sender (as far as an application
  * is concerned).
@@ -357,7 +357,7 @@ contract MFETVault is Context, Ownable, ReentrancyGuard {
     uint256 public distributionInterval = 3 seconds;
     uint256 public minInvest = 1000 * 10**8;
 
-    IBEP20 private mfetT = IBEP20(0x870B171a274df8c0AA407d2a1efb43501E5da30D);
+    IBEP20 private mfetT = IBEP20(0xe5C06Ed88c8cCE4667946FdA10ae2cb69dEaaA96);
 
     /*=======================================
     =            RECOVERY FUNCTIONS         =
@@ -424,7 +424,7 @@ contract MFETVault is Context, Ownable, ReentrancyGuard {
     }
 
     /// @dev invest with tokens
-    function investFor(uint256 _investAmount, address _customerAddress)
+    function investFor(uint256 _investAmount, address _address)
         external
         onlyEOA
         nonReentrant
@@ -433,7 +433,7 @@ contract MFETVault is Context, Ownable, ReentrancyGuard {
         require(_investAmount >= minInvest, "min invest 1000 MFET");
         totalDeposits += _investAmount;
         mfetT.transferFrom(_msgSender(), address(this), _investAmount);
-        return investing(_customerAddress, _investAmount);
+        return investing(_address, _investAmount);
     }
 
     /// @dev Converts all of caller's dividends to tokens.
@@ -449,27 +449,27 @@ contract MFETVault is Context, Ownable, ReentrancyGuard {
         // retrieve ref. bonus later in the code
 
         // pay out the dividends virtually
-        address _customerAddress = _msgSender();
-        payoutsTo_[_customerAddress] += (int256)(_dividends * magnitude);
+        address address_ = _msgSender();
+        payoutsTo_[address_] += (int256)(_dividends * magnitude);
 
         // dispatch a buy order with the virtualized "withdrawn dividends"
         uint256 _tokens = investTokens(_msgSender(), _dividends);
 
         // fire event
-        emit onReinvestment(_customerAddress, _tokens, block.timestamp);
+        emit onReinvestment(address_, _tokens, block.timestamp);
 
         //Stats
-        stats[_customerAddress].reinvested = SafeMath.add(
-            stats[_customerAddress].reinvested,
+        stats[address_].reinvested = SafeMath.add(
+            stats[address_].reinvested,
             _tokens
         );
-        stats[_customerAddress].xReinvested += 1;
+        stats[address_].xReinvested += 1;
 
         emit onLeaderBoard(
-            _customerAddress,
-            stats[_customerAddress].invested,
-            tokenBalanceLedger_[_customerAddress],
-            stats[_customerAddress].withdrawn,
+            address_,
+            stats[address_].invested,
+            tokenBalanceLedger_[address_],
+            stats[address_].withdrawn,
             block.timestamp
         );
 
@@ -488,33 +488,33 @@ contract MFETVault is Context, Ownable, ReentrancyGuard {
         returns (uint256)
     {
         // setup data
-        address _customerAddress = _msgSender();
+        address address_ = _msgSender();
         uint256 _dividends = myDividends(); // 100% of divs
 
         // update dividend tracker
-        payoutsTo_[_customerAddress] += (int256)(_dividends * magnitude);
+        payoutsTo_[address_] += (int256)(_dividends * magnitude);
 
         totalWithdrawn += _dividends;
 
         //stats
-        stats[_customerAddress].withdrawn = SafeMath.add(
-            stats[_customerAddress].withdrawn,
+        stats[address_].withdrawn = SafeMath.add(
+            stats[address_].withdrawn,
             _dividends
         );
-        stats[_customerAddress].xWithdrawn += 1;
+        stats[address_].xWithdrawn += 1;
         totalTxs += 1;
         totalClaims += _dividends;
 
         mfetT.transfer(_msgSender(), _dividends);
 
         // fire event
-        emit onWithdraw(_customerAddress, _dividends, block.timestamp);
+        emit onWithdraw(address_, _dividends, block.timestamp);
 
         emit onLeaderBoard(
-            _customerAddress,
-            stats[_customerAddress].invested,
-            tokenBalanceLedger_[_customerAddress],
-            stats[_customerAddress].withdrawn,
+            address_,
+            stats[address_].invested,
+            tokenBalanceLedger_[address_],
+            stats[address_].withdrawn,
             block.timestamp
         );
 
@@ -531,10 +531,10 @@ contract MFETVault is Context, Ownable, ReentrancyGuard {
         onlyInvestors
     {
         // setup data
-        address _customerAddress = _msgSender();
+        address address_ = _msgSender();
 
         require(
-            _amountOfTokens <= tokenBalanceLedger_[_customerAddress],
+            _amountOfTokens <= tokenBalanceLedger_[address_],
             "More then withdrawn"
         );
 
@@ -550,8 +550,8 @@ contract MFETVault is Context, Ownable, ReentrancyGuard {
 
         // remove from supply sold tokens
         tokenSupply_ = SafeMath.sub(tokenSupply_, _amountOfTokens);
-        tokenBalanceLedger_[_customerAddress] = SafeMath.sub(
-            tokenBalanceLedger_[_customerAddress],
+        tokenBalanceLedger_[address_] = SafeMath.sub(
+            tokenBalanceLedger_[address_],
             _amountOfTokens
         );
 
@@ -560,10 +560,10 @@ contract MFETVault is Context, Ownable, ReentrancyGuard {
             profitPerShare_ * _amountOfTokens + (_taxedAmount * magnitude)
         );
 
-        payoutsTo_[_customerAddress] -= _updatedPayouts;
+        payoutsTo_[address_] -= _updatedPayouts;
 
         /// update stats
-        stats[_customerAddress].taxes += _undividedDividends;
+        stats[address_].taxes += _undividedDividends;
 
         //drip and buybacks
         allocateFees(_undividedDividends);
@@ -571,7 +571,7 @@ contract MFETVault is Context, Ownable, ReentrancyGuard {
         mfetT.transfer(_msgSender(), _amountOfTokens);
 
         // fire event
-        emit onTokenExit(_customerAddress, _taxedAmount, block.timestamp);
+        emit onTokenExit(address_, _taxedAmount, block.timestamp);
 
         //distribute
         distribute();
@@ -586,12 +586,12 @@ contract MFETVault is Context, Ownable, ReentrancyGuard {
      */
 
     /// @dev Stats of any single address
-    function statsOf(address _customerAddress)
+    function statsOf(address _address)
         external
         view
         returns (uint256[7] memory)
     {
-        Stats memory s = stats[_customerAddress];
+        Stats memory s = stats[_address];
         uint256[7] memory statArray = [
             s.invested,
             s.reinvested,
@@ -617,6 +617,11 @@ contract MFETVault is Context, Ownable, ReentrancyGuard {
         return tokenSupply_;
     }
 
+    /// @dev Retrieve the profit per share amount
+    function profitPerShare() external view returns (uint256) {
+        return profitPerShare_;
+    }
+
     /// @dev this amount is what contract collect with %2 lock amount
     function totalTokenBalance() public view returns (uint256) {
         return mfetT.balanceOf(address(this));
@@ -624,54 +629,62 @@ contract MFETVault is Context, Ownable, ReentrancyGuard {
 
     /// @dev Retrieve the dividends owned by the caller.
     function myDividends() public view returns (uint256) {
-        address _customerAddress = _msgSender();
-        return dividendsOf(_customerAddress);
+        return dividendsOf(_msgSender());
     }
 
     /// @dev Retrieve the tokens owned by the caller.
     function myTokens() public view returns (uint256) {
-        address _customerAddress = _msgSender();
-        return balanceOf(_customerAddress);
+        return balanceOf(_msgSender());
     }
 
     /// @dev Retrieve the tokens owned by the caller.
     function myDailyEstimate() public view returns (uint256) {
-        address _customerAddress = _msgSender();
-        return balanceOf(_customerAddress);
+        return dailyEstimate(_msgSender());
     }
 
     /// @dev Retrieve the token balance of any single address.
-    function balanceOf(address _customerAddress) public view returns (uint256) {
-        return tokenBalanceLedger_[_customerAddress];
+    function balanceOf(address _address) public view returns (uint256) {
+        return tokenBalanceLedger_[_address];
     }
 
     /// @dev Retrieve the dividend balance of any single address.
-    function dividendsOf(address _customerAddress)
-        public
-        view
-        returns (uint256)
-    {
+    function dividendsOf(address _address) public view returns (uint256) {
         return
             (uint256)(
-                (int256)(
-                    profitPerShare_ * tokenBalanceLedger_[_customerAddress]
-                ) - payoutsTo_[_customerAddress]
+                (int256)(profitPerShare_ * tokenBalanceLedger_[_address]) -
+                    payoutsTo_[_address]
             ) / magnitude;
     }
 
     /// @dev Calculate daily estimate of swap tokens awarded
-    function dailyEstimate(address _customerAddress)
-        external
-        view
-        returns (uint256)
-    {
+    function dailyEstimate(address _address) public view returns (uint256) {
         uint256 share = dividendBalance.mul(payoutRate_).div(1000);
         return
             (tokenSupply_ > 0)
-                ? share.mul(tokenBalanceLedger_[_customerAddress]).div(
-                    tokenSupply_
-                )
+                ? share.mul(tokenBalanceLedger_[_address]).div(tokenSupply_)
                 : 0;
+    }
+
+    /// @dev get details easy to web pages
+    function getDetailsOfContractAtOnce()
+        external
+        view
+        returns (uint256[11] memory)
+    {
+        uint256[11] memory contractArray = [
+            tokenSupply_,
+            totalDeposits,
+            totalWithdrawn,
+            totalRewards,
+            totalClaims,
+            players,
+            totalTxs,
+            minInvest,
+            lastPayout,
+            dividendBalance,
+            profitPerShare_
+        ];
+        return contractArray;
     }
 
     /*==========================================
@@ -679,17 +692,17 @@ contract MFETVault is Context, Ownable, ReentrancyGuard {
     ==========================================*/
 
     /// @dev all action start here
-    function investing(address _customerAddress, uint256 _investAmount)
+    function investing(address _address, uint256 _investAmount)
         internal
         returns (uint256)
     {
-        uint256 amount = investTokens(_customerAddress, _investAmount);
+        uint256 amount = investTokens(_address, _investAmount);
 
         emit onLeaderBoard(
-            _customerAddress,
-            stats[_customerAddress].invested,
-            tokenBalanceLedger_[_customerAddress],
-            stats[_customerAddress].withdrawn,
+            _address,
+            stats[_address].invested,
+            tokenBalanceLedger_[_address],
+            stats[_address].withdrawn,
             block.timestamp
         );
 
@@ -756,12 +769,12 @@ contract MFETVault is Context, Ownable, ReentrancyGuard {
     }
 
     /// @dev Internal function to actualy invest tokens
-    function investTokens(address _customerAddress, uint256 _incomingtokens)
+    function investTokens(address _address, uint256 _incomingtokens)
         internal
         returns (uint256)
     {
         /* Members */
-        if (stats[_customerAddress].invested == 0) {
+        if (stats[_address].invested == 0) {
             players += 1;
         }
 
@@ -777,7 +790,7 @@ contract MFETVault is Context, Ownable, ReentrancyGuard {
         ); // 90% of drops (100% - 10% above)
 
         // fire event
-        emit onTokenInvest(_customerAddress, _incomingtokens, block.timestamp);
+        emit onTokenInvest(_address, _incomingtokens, block.timestamp);
 
         // yes we know that the safemath function automatically rules out the "greater then" equation.
         require(
@@ -799,19 +812,19 @@ contract MFETVault is Context, Ownable, ReentrancyGuard {
         allocateFees(_undividedDividends);
 
         // update circulating supply & the ledger address for the customer
-        tokenBalanceLedger_[_customerAddress] = SafeMath.add(
-            tokenBalanceLedger_[_customerAddress],
+        tokenBalanceLedger_[_address] = SafeMath.add(
+            tokenBalanceLedger_[_address],
             _amountOfTokens
         );
 
         // Tells the contract that the buyer doesn't deserve dividends for the tokens before they owned them;
         int256 _updatedPayouts = (int256)(profitPerShare_ * _amountOfTokens);
-        payoutsTo_[_customerAddress] += _updatedPayouts;
+        payoutsTo_[_address] += _updatedPayouts;
 
         //Stats
-        stats[_customerAddress].taxes += _undividedDividends;
-        stats[_customerAddress].invested += _incomingtokens;
-        stats[_customerAddress].xInvested += 1;
+        stats[_address].taxes += _undividedDividends;
+        stats[_address].invested += _incomingtokens;
+        stats[_address].xInvested += 1;
 
         return _amountOfTokens;
     }
