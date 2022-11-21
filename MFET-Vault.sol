@@ -1,17 +1,11 @@
 // SPDX-License-Identifier: MIT
+
 // MFET - Multi Functional Environmental Token
 // We are Developing New Generation Projects and Funding These Projects with Green Blockchain.
 
-// A Sustainable World
-// MFET is an ecosystem that supports sustainable projects, provides mentoring to companies in carbon footprint studies,
-// provides consultancy on environmental and climate studies, and makes decisions without being dependent on an authority
-// with the community it has created, thanks to the blockchain.
-
-// MFET - Stake Contract
+// MFET - Vault Contract
 
 // Mens et Manus
-
-/// Locked solidity version
 pragma solidity 0.8.17;
 
 /**
@@ -51,7 +45,7 @@ interface IBEP20 {
 /**
  * @dev Provides information about the current execution context, including the
  * sender of the transaction and its data. While these are generally available
- * via msg.sender and msg.data, they should not be accessed in such a direct
+ * via _msgSender() and msg.data, they should not be accessed in such a direct
  * manner, since when dealing with meta-transactions the account sending and
  * paying for execution may not be the actual sender (as far as an application
  * is concerned).
@@ -256,7 +250,6 @@ contract MFETVault is Context, Ownable, ReentrancyGuard {
     /*=================================
     =            MODIFIERS            =
     =================================*/
-
     /// @dev Only people with profits
     modifier onlyInvestors() {
         require(myDividends() > 0);
@@ -272,7 +265,6 @@ contract MFETVault is Context, Ownable, ReentrancyGuard {
     /*==============================
     =            EVENTS            =
     ==============================*/
-
     event onLeaderBoard(
         address indexed customerAddress,
         uint256 invested,
@@ -323,16 +315,15 @@ contract MFETVault is Context, Ownable, ReentrancyGuard {
     /*=====================================
     =            CONFIGURABLES            =
     =====================================*/
-
     /// @dev 10% distribute every deposit and withdraw
-    uint8 internal constant entryFee_ = 10;
-    uint8 internal constant exitFee_ = 10;
+    uint256 internal constant entryFee_ = 100; // over 1000 its 10%
+    uint256 internal constant exitFee_ = 100; // over 1000 its 10%
 
     /// @dev %40 drip %40 instant %20 locked
-    uint8 internal constant dripFee = 40;
-    uint8 internal constant instantFee = 40;
+    uint256 internal constant dripFee = 400; // over 1000 its 40%
+    uint256 internal constant instantFee = 400; // over 1000 its 40%
 
-    uint8 private payoutRate_ = 10;
+    uint256 private payoutRate_ = 20; // over 1000 its 2%
 
     uint256 internal magnitude = 10**10;
 
@@ -341,22 +332,20 @@ contract MFETVault is Context, Ownable, ReentrancyGuard {
     /*=================================
      =            DATASETS            =
      ================================*/
-
     // amount of shares for each address (scaled number)
     mapping(address => uint256) private tokenBalanceLedger_;
     mapping(address => int256) private payoutsTo_;
     mapping(address => Stats) private stats;
 
     //on chain referral tracking
+    uint256 internal lastBalance_;
     uint256 private tokenSupply_;
     uint256 private profitPerShare_;
-    uint256 internal lastBalance_;
-
-    uint256 public totalDeposits;
-    uint256 public totalWithdrawn;
     uint256 private lockedBalance;
     uint256 private totalRewards;
 
+    uint256 public totalDeposits;
+    uint256 public totalWithdrawn;
     uint256 public players;
     uint256 public totalTxs;
     uint256 public dividendBalance;
@@ -365,15 +354,14 @@ contract MFETVault is Context, Ownable, ReentrancyGuard {
     uint256 public totalClaims;
 
     uint256 public balanceInterval = 30 seconds;
-    uint256 public distributionInterval = 1 seconds;
+    uint256 public distributionInterval = 3 seconds;
     uint256 public minInvest = 1000 * 10**8;
 
-    IBEP20 private cToken = IBEP20(0x8CdaF0CD259887258Bc13a92C0a6dA92698644C0);
+    IBEP20 private mfetT = IBEP20(0x870B171a274df8c0AA407d2a1efb43501E5da30D);
 
     /*=======================================
     =            RECOVERY FUNCTIONS         =
     =======================================*/
-
     receive() external payable {}
 
     /// @dev BEP20 Token
@@ -386,19 +374,24 @@ contract MFETVault is Context, Ownable, ReentrancyGuard {
     }
 
     /// @dev Native Token BNB
-    function recoverBNB(address payable to) public onlyOwner {
+    function recoverBNB(address payable _to) public onlyOwner {
         require(address(this).balance > 0, "zero native balance");
-        to.transfer(address(this).balance);
+        _to.transfer(address(this).balance);
     }
 
     /*=======================================
-    =            CALCULATION FUNCTIONS      =
+    =            CONSTANT FUNCTIONS         =
     =======================================*/
-
     /// @dev change payoutrate in limits
     function changePayoutRate(uint8 _rate) public onlyOwner {
-        require(_rate >= 2 && _rate <= 100, "must between 2-100");
+        require(_rate > 0 && _rate <= 1000, "must between 1-1000");
         payoutRate_ = _rate;
+    }
+
+    /// @dev change min invest amount
+    function changeMinInvest(uint8 _amount) public onlyOwner {
+        require(_amount > 0, "must big then zero");
+        minInvest = _amount;
     }
 
     /*=======================================
@@ -413,7 +406,7 @@ contract MFETVault is Context, Ownable, ReentrancyGuard {
     {
         require(_reward >= minInvest, "min invest 1000 MFET");
         totalDeposits += _reward;
-        cToken.transferFrom(msg.sender, address(this), _reward);
+        mfetT.transferFrom(_msgSender(), address(this), _reward);
         return rewardInvestors(_reward);
     }
 
@@ -426,8 +419,8 @@ contract MFETVault is Context, Ownable, ReentrancyGuard {
     {
         require(_investAmount >= minInvest, "min invest 1000 MFET");
         totalDeposits += _investAmount;
-        cToken.transferFrom(msg.sender, address(this), _investAmount);
-        return investing(msg.sender, _investAmount);
+        mfetT.transferFrom(_msgSender(), address(this), _investAmount);
+        return investing(_msgSender(), _investAmount);
     }
 
     /// @dev invest with tokens
@@ -439,7 +432,7 @@ contract MFETVault is Context, Ownable, ReentrancyGuard {
     {
         require(_investAmount >= minInvest, "min invest 1000 MFET");
         totalDeposits += _investAmount;
-        cToken.transferFrom(msg.sender, address(this), _investAmount);
+        mfetT.transferFrom(_msgSender(), address(this), _investAmount);
         return investing(_customerAddress, _investAmount);
     }
 
@@ -456,11 +449,11 @@ contract MFETVault is Context, Ownable, ReentrancyGuard {
         // retrieve ref. bonus later in the code
 
         // pay out the dividends virtually
-        address _customerAddress = msg.sender;
+        address _customerAddress = _msgSender();
         payoutsTo_[_customerAddress] += (int256)(_dividends * magnitude);
 
         // dispatch a buy order with the virtualized "withdrawn dividends"
-        uint256 _tokens = investTokens(msg.sender, _dividends);
+        uint256 _tokens = investTokens(_msgSender(), _dividends);
 
         // fire event
         emit onReinvestment(_customerAddress, _tokens, block.timestamp);
@@ -495,7 +488,7 @@ contract MFETVault is Context, Ownable, ReentrancyGuard {
         returns (uint256)
     {
         // setup data
-        address _customerAddress = msg.sender;
+        address _customerAddress = _msgSender();
         uint256 _dividends = myDividends(); // 100% of divs
 
         // update dividend tracker
@@ -512,7 +505,7 @@ contract MFETVault is Context, Ownable, ReentrancyGuard {
         totalTxs += 1;
         totalClaims += _dividends;
 
-        cToken.transfer(msg.sender, _dividends);
+        mfetT.transfer(_msgSender(), _dividends);
 
         // fire event
         emit onWithdraw(_customerAddress, _dividends, block.timestamp);
@@ -538,7 +531,7 @@ contract MFETVault is Context, Ownable, ReentrancyGuard {
         onlyInvestors
     {
         // setup data
-        address _customerAddress = msg.sender;
+        address _customerAddress = _msgSender();
 
         require(
             _amountOfTokens <= tokenBalanceLedger_[_customerAddress],
@@ -546,8 +539,9 @@ contract MFETVault is Context, Ownable, ReentrancyGuard {
         );
 
         // data setup
-        uint256 _undividedDividends = SafeMath.mul(_amountOfTokens, exitFee_) /
-            100;
+        uint256 _undividedDividends = SafeMath
+            .mul(_amountOfTokens, exitFee_)
+            .div(1000);
 
         uint256 _taxedAmount = SafeMath.sub(
             _amountOfTokens,
@@ -574,7 +568,7 @@ contract MFETVault is Context, Ownable, ReentrancyGuard {
         //drip and buybacks
         allocateFees(_undividedDividends);
 
-        cToken.transfer(msg.sender, _amountOfTokens);
+        mfetT.transfer(_msgSender(), _amountOfTokens);
 
         // fire event
         emit onTokenExit(_customerAddress, _taxedAmount, block.timestamp);
@@ -618,27 +612,32 @@ contract MFETVault is Context, Ownable, ReentrancyGuard {
         return totalRewards;
     }
 
-    /// @dev Retrieve the total token supply.
-    function totalSupply() external view returns (uint256) {
+    /// @dev Retrieve the total token supply this amount is what contract will distribute
+    function tokenSupply() external view returns (uint256) {
         return tokenSupply_;
     }
 
+    /// @dev this amount is what contract collect with %2 lock amount
     function totalTokenBalance() public view returns (uint256) {
-        return cToken.balanceOf(address(this));
+        return mfetT.balanceOf(address(this));
+    }
+
+    /// @dev Retrieve the dividends owned by the caller.
+    function myDividends() public view returns (uint256) {
+        address _customerAddress = _msgSender();
+        return dividendsOf(_customerAddress);
     }
 
     /// @dev Retrieve the tokens owned by the caller.
     function myTokens() public view returns (uint256) {
-        address _customerAddress = msg.sender;
+        address _customerAddress = _msgSender();
         return balanceOf(_customerAddress);
     }
 
-    /**
-     * @dev Retrieve the dividends owned by the caller.
-     */
-    function myDividends() public view returns (uint256) {
-        address _customerAddress = msg.sender;
-        return dividendsOf(_customerAddress);
+    /// @dev Retrieve the tokens owned by the caller.
+    function myDailyEstimate() public view returns (uint256) {
+        address _customerAddress = _msgSender();
+        return balanceOf(_customerAddress);
     }
 
     /// @dev Retrieve the token balance of any single address.
@@ -666,7 +665,7 @@ contract MFETVault is Context, Ownable, ReentrancyGuard {
         view
         returns (uint256)
     {
-        uint256 share = dividendBalance.mul(payoutRate_).div(100);
+        uint256 share = dividendBalance.mul(payoutRate_).div(1000);
         return
             (tokenSupply_ > 0)
                 ? share.mul(tokenBalanceLedger_[_customerAddress]).div(
@@ -702,8 +701,8 @@ contract MFETVault is Context, Ownable, ReentrancyGuard {
 
     /// @dev Distribute undividend in and out fees across drip pools and instant divs
     function allocateFees(uint256 fee) private {
-        uint256 _drip = fee.mul(dripFee).div(100); //40
-        uint256 _instant = fee.mul(instantFee).div(100); //40
+        uint256 _drip = fee.mul(dripFee).div(1000); // %40
+        uint256 _instant = fee.mul(instantFee).div(1000); // %40
         uint256 _lock = fee.safeSub(_drip + _instant); //100 -80
 
         if (tokenSupply_ > 0) {
@@ -738,7 +737,7 @@ contract MFETVault is Context, Ownable, ReentrancyGuard {
             tokenSupply_ > 0
         ) {
             //A portion of the dividend is paid out according to the rate
-            uint256 share = dividendBalance.mul(payoutRate_).div(100).div(
+            uint256 share = dividendBalance.mul(payoutRate_).div(1000).div(
                 24 hours
             );
             //divide the profit by seconds in the day
@@ -769,8 +768,9 @@ contract MFETVault is Context, Ownable, ReentrancyGuard {
         totalTxs += 1;
 
         // calculate the amount that will go to fee
-        uint256 _undividedDividends = SafeMath.mul(_incomingtokens, entryFee_) /
-            100; // 40% of drops
+        uint256 _undividedDividends = SafeMath
+            .mul(_incomingtokens, entryFee_)
+            .div(1000); // 40% of drops
         uint256 _amountOfTokens = SafeMath.sub(
             _incomingtokens,
             _undividedDividends
@@ -849,4 +849,3 @@ contract MFETVault is Context, Ownable, ReentrancyGuard {
         return _rewards;
     }
 }
-// Made with love.
